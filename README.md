@@ -30,20 +30,32 @@ unicode_width_init(&state);
 
 // Process characters and get their widths.
 int width = unicode_width_process(&state, 'A');        // 1 column
+unicode_width_reset(&state);
+
 width = unicode_width_process(&state, 0x4E00);         // 2 columns (CJK)
+unicode_width_reset(&state);
+
 width = unicode_width_process(&state, 0x1F600);        // 2 columns (emoji)
+unicode_width_reset(&state);
+
 width = unicode_width_process(&state, 0x0301);         // 0 columns (combining mark)
+unicode_width_reset(&state);
+
 width = unicode_width_process(&state, '\n');           // 0 columns (newline)
+unicode_width_reset(&state);
+
 width = unicode_width_process(&state, 0x07);           // -1 (control character)
+unicode_width_reset(&state);
 
 // Get display width for control characters (e.g., for readline-style display).
 int control_width = unicode_width_control_char(0x07);  // 2 columns (^G)
-
-// Reset state.
-unicode_width_reset(&state);
 ```
 
-### Processing UTF-8 Strings
+### Processing Unicode Strings
+
+You can use [libgrapheme](https://libs.suckless.org/libgrapheme/),
+[utf8proc](https://github.com/JuliaStrings/utf8proc),
+or any other Unicode decoding solutions.
 
 ```c
 int string_width(const char *str, size_t len) {
@@ -51,7 +63,7 @@ int string_width(const char *str, size_t len) {
   unicode_width_init(&state);
   int width = 0;
 
-  // Your UTF-8 decoding loop here...
+  // Your Unicode decoding loop here...
   uint_least32_t cp;
   // For each decoded codepoint:
   int cp_width = unicode_width_process(&state, cp);
@@ -63,6 +75,63 @@ int string_width(const char *str, size_t len) {
   }
 
   return width;
+}
+```
+
+Using libgrapheme:
+
+```c
+#include <stdio.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <grapheme.h>
+
+#include "unicode_width.h"
+
+/**
+ * Calculate the display width of a UTF-8 encoded string.
+ *
+ * @param str The UTF-8 encoded string
+ * @param len Length of the string in bytes
+ * @param show_control Whether to count control characters (as ^X notation)
+ * @return The display width in terminal columns
+ */
+int string_width(const char *str, size_t len, bool show_control) {
+    if (str == NULL || len == 0) {
+        return 0;
+    }
+
+    unicode_width_state_t state;
+    unicode_width_init(&state);
+    int width = 0;
+    size_t offset = 0;
+    size_t bytes_read;
+    uint_least32_t cp;
+
+    /* Process each codepoint in the string. */
+    while (offset < len) {
+        bytes_read = grapheme_decode_utf8(str + offset, len - offset, &cp);
+
+        if (bytes_read == 0 || bytes_read > (len - offset)) {
+            /* Invalid sequence or unexpected end - stop processing. */
+            break;
+        }
+
+        int cp_width = unicode_width_process(&state, cp);
+        if (cp_width >= 0) {
+            /* Normal character with width. */
+            width += cp_width;
+        } else if (cp_width == -1 && show_control) {
+            /* Control character, show as ^X if requested. */
+            width += unicode_width_control_char(cp);
+        }
+        /* Else is control character that we're not showing. */
+
+        offset += bytes_read;
+    }
+
+    return width;
 }
 ```
 
