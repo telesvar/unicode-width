@@ -98,40 +98,40 @@ Using libgrapheme:
  * @return The display width in terminal columns
  */
 int string_width(const char *str, size_t len, bool show_control) {
-    if (str == NULL || len == 0) {
-        return 0;
+  if (str == NULL || len == 0) {
+    return 0;
+  }
+
+  unicode_width_state_t state;
+  unicode_width_init(&state);
+  int width = 0;
+  size_t offset = 0;
+  size_t bytes_read;
+  uint_least32_t cp;
+
+  /* Process each codepoint in the string. */
+  while (offset < len) {
+    bytes_read = grapheme_decode_utf8(str + offset, len - offset, &cp);
+
+    if (bytes_read == 0 || bytes_read > (len - offset)) {
+      /* Invalid sequence or unexpected end - stop processing. */
+      break;
     }
 
-    unicode_width_state_t state;
-    unicode_width_init(&state);
-    int width = 0;
-    size_t offset = 0;
-    size_t bytes_read;
-    uint_least32_t cp;
-
-    /* Process each codepoint in the string. */
-    while (offset < len) {
-        bytes_read = grapheme_decode_utf8(str + offset, len - offset, &cp);
-
-        if (bytes_read == 0 || bytes_read > (len - offset)) {
-            /* Invalid sequence or unexpected end - stop processing. */
-            break;
-        }
-
-        int cp_width = unicode_width_process(&state, cp);
-        if (cp_width >= 0) {
-            /* Normal character with width. */
-            width += cp_width;
-        } else if (cp_width == -1 && show_control) {
-            /* Control character, show as ^X if requested. */
-            width += unicode_width_control_char(cp);
-        }
-        /* Else is control character that we're not showing. */
-
-        offset += bytes_read;
+    int cp_width = unicode_width_process(&state, cp);
+    if (cp_width >= 0) {
+      /* Normal character with width. */
+      width += cp_width;
+    } else if (cp_width == -1 && show_control) {
+      /* Control character, show as ^X if requested. */
+      width += unicode_width_control_char(cp);
     }
+    /* Else is control character that we're not showing. */
 
-    return width;
+    offset += bytes_read;
+  }
+
+  return width;
 }
 ```
 
