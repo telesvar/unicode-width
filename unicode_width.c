@@ -908,10 +908,10 @@ int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint
     if (codepoint == 0x0A) {
       /* LF: In terminals, newlines don't consume horizontal space. */
       if (state->previous_codepoint == 0x0D) {
-        /* Part of CRLF sequence */
+        /* Part of CRLF sequence. */
         next_state = WIDTH_STATE_DEFAULT;
       } else {
-        /* Standalone LF */
+        /* Standalone LF. */
         next_state = WIDTH_STATE_LINE_FEED;
       }
       width = 0;
@@ -1037,7 +1037,7 @@ int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint
     case WIDTH_STATE_DEFAULT:
       /* Handle carriage return. */
       if (codepoint == 0x0D) {
-        /* CR: zero width */
+        /* CR: zero width. */
         width = 0;
       }
       /* Handle emoji presentation selector. */

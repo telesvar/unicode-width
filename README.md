@@ -88,8 +88,7 @@ Using libgrapheme:
 
 #include "unicode_width.h"
 
-/**
- * Calculate the display width of a UTF-8 encoded string.
+/* Calculate the display width of a UTF-8 encoded string.
  *
  * @param str The UTF-8 encoded string
  * @param len Length of the string in bytes
