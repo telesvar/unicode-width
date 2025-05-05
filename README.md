@@ -13,7 +13,11 @@ A C library for calculating text display width in terminals. Accurately handles 
 
 ## Installation
 
-Copy `unicode_width.h` and `unicode_width.c` to your project. You'll also need a UTF-8 decoder (test program uses `grapheme.h`).
+Copy `unicode_width.h` and `unicode_width.c` to your project.
+
+You'll also need a Unicode decoder.
+
+Test program uses [libgrapheme](https://libs.suckless.org/libgrapheme/).
 
 ## Usage
 
