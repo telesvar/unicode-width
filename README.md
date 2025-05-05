@@ -81,7 +81,6 @@ int string_width(const char *str, size_t len) {
 Using libgrapheme:
 
 ```c
-#include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
 
