@@ -96,7 +96,7 @@ Using libgrapheme:
  * @param show_control Whether to count control characters (as ^X notation)
  * @return The display width in terminal columns
  */
-int string_width(const char *str, size_t len, bool show_control) {
+int string_width(const char *str, size_t len, int show_control) {
   if (str == NULL || len == 0) {
     return 0;
   }
