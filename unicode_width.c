@@ -887,8 +887,8 @@ void unicode_width_init(unicode_width_state_t *state) {
  * This function keeps track of context via the state parameter.
  */
 int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint) {
-  int width;
   width_state_t next_state = WIDTH_STATE_DEFAULT;
+  int width = 0;
   int adjust = 0;
 
   assert(state != NULL);
