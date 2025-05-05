@@ -22,8 +22,8 @@ This library is particularly useful for:
 ### Using the Library in Your Project
 
 1. Copy these files to your project:
-  - `unicode_width.h` - Header file
-  - `unicode_width.c` - Implementation
+  - `unicode_width.h` – Header file
+  - `unicode_width.c` – Implementation
 
 2. Include the header in your code:
   ```c
@@ -144,7 +144,7 @@ This will:
 - **Generation Script**: [Apache 2.0](/LICENSE-APACHE) or [MIT](/LICENSE-MIT) (your choice)
 - **Unicode Data**: Used under the [Unicode License Agreement](https://www.unicode.org/license.txt)
 
-## Credits
+## Credits and Acknowledgments
 
 - Based on the [Rust unicode-width](https://github.com/unicode-rs/unicode-width) crate
 - Converted for left-to-right processing in C
