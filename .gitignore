@@ -1,6 +1,5 @@
 .DS_Store
 *.txt
-unicode_width.*
 *.exe
 *.o
 *.out
