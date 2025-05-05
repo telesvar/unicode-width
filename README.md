@@ -135,8 +135,6 @@ int string_width(const char *str, size_t len, int show_control) {
 
 ## Building from Source
 
-The C code is generated from Unicode data files (v16.0.0).
-
 To regenerate (requires Python version 3.12 or higher):
 
 ```sh
