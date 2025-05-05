@@ -843,6 +843,14 @@ void unicode_width_init(unicode_width_state_t *state);
 /* Process a Unicode codepoint and return its width.
  * Width is 0, 1, 2, or 3, or -1 for control characters.
  *
+ * Control characters (0x00-0x1F except newlines, 0x7F, and 0x80-0x9F) return -1,
+ * allowing the caller to decide how to display them. For readline-like applications,
+ * control characters are typically displayed using caret notation (^X) with width 2.
+ * Use unicode_width_control_char() to get this width.
+ *
+ * Newlines (LF, CR, CRLF) return width 0 as they don't consume horizontal space
+ * in terminal displays.
+ *
  * Note that the width of a codepoint may depend on context (preceding/following
  * codepoints), so this function keeps track of context in the provided state.
  *
@@ -851,6 +859,14 @@ void unicode_width_init(unicode_width_state_t *state);
  * @return Width of the codepoint in columns, or -1 for control characters
  */
 int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint);
+
+/* Get the display width of a control character in caret notation (e.g., ^A).
+ * This is useful for applications like readline that display control chars.
+ *
+ * @param codepoint The Unicode codepoint to check
+ * @return The display width (usually 2 for ^X notation), or -1 if not a control char
+ */
+int unicode_width_control_char(uint_least32_t codepoint);
 
 /* Reset a unicode width state to its initial state.
  *
@@ -1063,8 +1079,11 @@ int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint
 
   assert(state != NULL);
 
-  /* Control characters have no displayable width. */
-  if (codepoint < 0x20 && codepoint != 0x0A) {
+  /* Handle control characters. */
+  if ((codepoint < 0x20 && codepoint != 0x0A && codepoint != 0x0D) ||
+      codepoint == 0x7F ||
+      (codepoint >= 0x80 && codepoint <= 0x9F)) {
+    /* Control characters return -1, letting the caller decide how to display them. */
     state->previous_codepoint = codepoint;
     return -1;
   }
@@ -1073,16 +1092,22 @@ int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint
   if (codepoint < 0x7F) {
     /* Handle newline specially. */
     if (codepoint == 0x0A) {
-      /* LF has width 1 in terminals. */
-      next_state = WIDTH_STATE_LINE_FEED;
-      width = 1;
+      /* LF: In terminals, newlines don't consume horizontal space. */
+      if (state->previous_codepoint == 0x0D) {
+        /* Part of CRLF sequence */
+        next_state = WIDTH_STATE_DEFAULT;
+      } else {
+        /* Standalone LF */
+        next_state = WIDTH_STATE_LINE_FEED;
+      }
+      width = 0;
+    } else if (codepoint == 0x0D) {
+      /* CR: Always zero width. */
+      width = 0;
     } else {
+      /* Regular ASCII. */
       width = 1;
     }
-  } else if (codepoint < 0xA0) {
-    /* More control characters. */
-    state->previous_codepoint = codepoint;
-    return -1;
   } else {
     /* Look up basic width. */
     width = lookup_width(codepoint);
@@ -1244,6 +1269,36 @@ int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint
   state->previous_codepoint = codepoint;
 
   return width;
+}
+
+/* Get the display width of a control character in caret notation (e.g., ^A).
+ * This is useful for applications like readline that display control chars.
+ */
+int unicode_width_control_char(uint_least32_t codepoint) {
+  /* C0 control characters (except CR and LF). */
+  if (codepoint < 0x20 && codepoint != 0x0A && codepoint != 0x0D) {
+    /* Displayed as ^X in readline-style (e.g., Ctrl+A is ^A). */
+    return 2;
+  }
+  /* DEL character. */
+  else if (codepoint == 0x7F) {
+    /* Displayed as ^? in readline-style. */
+    return 2;
+  }
+  /* C1 control characters. */
+  else if (codepoint >= 0x80 && codepoint <= 0x9F) {
+    /* There are different conventions for displaying C1 controls:
+     * 1. Some terminals use M-^X notation (4 columns wide, e.g., M-^A)
+     * 2. Others use hex notation like <80> (4 columns wide)
+     * 3. Some use Unicode code point notation (variable width)
+     *
+     * We'll return 4 as a reasonable default that works with common conventions.
+     */
+    return 4;
+  }
+
+  /* Not a control character. */
+  return -1;
 }
 
 /* Reset a width calculation state machine.

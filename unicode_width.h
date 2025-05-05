@@ -55,6 +55,14 @@ void unicode_width_init(unicode_width_state_t *state);
 /* Process a Unicode codepoint and return its width.
  * Width is 0, 1, 2, or 3, or -1 for control characters.
  *
+ * Control characters (0x00-0x1F except newlines, 0x7F, and 0x80-0x9F) return -1,
+ * allowing the caller to decide how to display them. For readline-like applications,
+ * control characters are typically displayed using caret notation (^X) with width 2.
+ * Use unicode_width_control_char() to get this width.
+ *
+ * Newlines (LF, CR, CRLF) return width 0 as they don't consume horizontal space
+ * in terminal displays.
+ *
  * Note that the width of a codepoint may depend on context (preceding/following
  * codepoints), so this function keeps track of context in the provided state.
  *
@@ -63,6 +71,14 @@ void unicode_width_init(unicode_width_state_t *state);
  * @return Width of the codepoint in columns, or -1 for control characters
  */
 int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint);
+
+/* Get the display width of a control character in caret notation (e.g., ^A).
+ * This is useful for applications like readline that display control chars.
+ *
+ * @param codepoint The Unicode codepoint to check
+ * @return The display width (usually 2 for ^X notation), or -1 if not a control char
+ */
+int unicode_width_control_char(uint_least32_t codepoint);
 
 /* Reset a unicode width state to its initial state.
  *

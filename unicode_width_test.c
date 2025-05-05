@@ -12,43 +12,11 @@
 
 #include "unicode_width.h"
 
-/* Helper function to calculate width of a UTF-8 string. */
-size_t unicode_width_utf8(const char *str, size_t len) {
-  unicode_width_state_t state;
-  unicode_width_init(&state);
-
-  size_t width = 0;
-  size_t offset = 0;
-  uint_least32_t cp;
-  size_t bytes;
-
-  while (offset < len) {
-    bytes = grapheme_decode_utf8(str + offset, len - offset, &cp);
-    if (bytes == 0 || bytes > (len - offset)) {
-      break;
-    }
-
-    int cp_width = unicode_width_process(&state, cp);
-    if (cp_width >= 0) {
-      width += cp_width;
-    }
-
-    offset += bytes;
-  }
-
-  return width;
-}
-
-/* Helper for NUL-terminated strings. */
-size_t unicode_width_cstr(const char *str) {
-  return unicode_width_utf8(str, strlen(str));
-}
-
 /* Test case structure. */
 typedef struct {
   const char *str;
   const char *desc;
-  size_t expected_width;
+  int expected_width;
 } test_case_t;
 
 int run_tests(test_case_t *tests, size_t test_count, const char *category) {
@@ -57,12 +25,39 @@ int run_tests(test_case_t *tests, size_t test_count, const char *category) {
 
   for (size_t i = 0; i < test_count; i++) {
     test_case_t *test = &tests[i];
-    size_t width = unicode_width_cstr(test->str);
+
+    /* Calculate width, treating -1 special characters as width 0. */
+    int width = 0;
+    unicode_width_state_t state;
+    unicode_width_init(&state);
+
+    for (size_t j = 0; j < strlen(test->str); j++) {
+      unsigned char c = test->str[j];
+      /* Handle UTF-8 sequences. */
+      if (c < 128) {
+        int char_width = unicode_width_process(&state, c);
+        if (char_width > 0) {
+          width += char_width;
+        }
+        /* Skip control characters (-1). */
+      } else {
+        /* For multi-byte characters, use grapheme library. */
+        uint_least32_t cp;
+        size_t bytes = grapheme_decode_utf8(test->str + j, strlen(test->str) - j, &cp);
+        if (bytes > 1) {
+          int char_width = unicode_width_process(&state, cp);
+          if (char_width > 0) {
+            width += char_width;
+          }
+          j += bytes - 1;
+        }
+      }
+    }
 
     if (width == test->expected_width) {
-      printf("  [%s]: PASS (width = %zu)\n", test->desc, width);
+      printf("  [%s]: PASS (width = %d)\n", test->desc, width);
     } else {
-      printf("  [%s]: FAIL - Expected %zu, got %zu\n",
+      printf("  [%s]: FAIL - Expected %d, got %d\n",
              test->desc, test->expected_width, width);
 
       /* Print string in hex. */
@@ -80,6 +75,44 @@ int run_tests(test_case_t *tests, size_t test_count, const char *category) {
          category, test_count, failed);
 
   return failed;
+}
+
+/* Test control characters handling. */
+void test_control_char_width() {
+  printf("Testing control character width function...\n");
+
+  struct {
+    uint_least32_t cp;
+    const char *desc;
+    int expected_width;
+  } tests[] = {
+    {0x01, "SOH (Start of Heading)", 2},
+    {0x07, "BEL (Bell)", 2},
+    {0x1B, "ESC (Escape)", 2},
+    {0x7F, "DEL", 2},
+    {0x90, "DCS (Device Control String)", 4},
+    {0x41, "A (not a control char)", -1},
+    {0x0A, "LF (handled separately)", -1},
+    {0x0D, "CR (handled separately)", -1},
+  };
+
+  int failed = 0;
+  for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+    int width = unicode_width_control_char(tests[i].cp);
+
+    if (width == tests[i].expected_width) {
+      printf("  [U+%04X %s]: PASS (width = %d)\n",
+             (unsigned int)tests[i].cp, tests[i].desc, width);
+    } else {
+      printf("  [U+%04X %s]: FAIL - Expected %d, got %d\n",
+             (unsigned int)tests[i].cp, tests[i].desc,
+             tests[i].expected_width, width);
+      failed++;
+    }
+  }
+
+  printf("Control character width: %zu tests, %d failures\n\n",
+         sizeof(tests) / sizeof(tests[0]), failed);
 }
 
 /* Test individual codepoint processing. */
@@ -130,14 +163,16 @@ void test_codepoint_sequences() {
     uint_least32_t codepoints[8];
     size_t count;
     const char *desc;
-    size_t expected_total_width;
+    int expected_total_width;
   } tests[] = {
     {{0x0061, 0x0062, 0x0063}, 3, "ASCII 'abc'", 3},
     {{0x0041, 0x0301, 0x0042}, 3, "A + combining accent + B", 2},
     {{0x1F600}, 1, "Emoji (Grinning Face)", 2},
     {{0x1F468, 0x200D, 0x1F469}, 3, "Man ZWJ Woman", 2},
     {{0x1F1FA, 0x1F1F8}, 2, "US flag", 2},
-    {{0x000D, 0x000A}, 2, "CR+LF", 1},
+    {{0x000D, 0x000A}, 2, "CR+LF", 0},
+    {{0x000A, 0x000D}, 2, "LF+CR", 0},
+    {{0x0007, 0x0007}, 2, "BEL+BEL (control chars)", 0},
   };
 
   int failed = 0;
@@ -145,20 +180,21 @@ void test_codepoint_sequences() {
     unicode_width_state_t state;
     unicode_width_init(&state);
 
-    size_t total_width = 0;
+    int total_width = 0;
 
     for (size_t j = 0; j < tests[i].count; j++) {
       int width = unicode_width_process(&state, tests[i].codepoints[j]);
       if (width >= 0) {
         total_width += width;
       }
+      /* Ignoring -1 (control chars) in this test. */
     }
 
     if (total_width == tests[i].expected_total_width) {
-      printf("  [%s]: PASS (total width = %zu)\n",
+      printf("  [%s]: PASS (total width = %d)\n",
              tests[i].desc, total_width);
     } else {
-      printf("  [%s]: FAIL - Expected total %zu, got %zu\n",
+      printf("  [%s]: FAIL - Expected total %d, got %d\n",
              tests[i].desc, tests[i].expected_total_width, total_width);
 
       /* Print codepoints in hex. */
@@ -176,40 +212,66 @@ void test_codepoint_sequences() {
          sizeof(tests) / sizeof(tests[0]), failed);
 }
 
-/* Test handling ANSI escape sequences. */
-void test_ansi_filtering() {
-  printf("Demonstration of handling ANSI escape sequences...\n");
+void test_mixed_sequences() {
+  printf("Testing mixed control and display character sequences...\n");
 
-  /* Sample text with ANSI escape codes. */
-  const char *ansi_text = "\x1B[1;32mGreen\x1B[0m \x1B[3;4;35mItalic+Underline Purple\x1B[0m \x1B[7mInverted\x1B[0m";
+  struct {
+    uint_least32_t codepoints[10];
+    size_t count;
+    const char *desc;
+    /* Expected width when control chars are displayed as ^X. */
+    int expected_width_caret;
+    /* Expected width when control chars are ignored. */
+    int expected_width_ignore;
+  } tests[] = {
+    {{0x0061, 0x0007, 0x0062}, 3, "a BEL b", 4, 2},  /* a (1) + ^G (2) + b (1) = 4 */
+    {{0x000D, 0x000A, 0x0063}, 3, "CRLF c", 1, 1},   /* CRLF (0) + c (1) = 1 */
+    {{0x0009, 0x0041, 0x0042}, 3, "TAB A B", 4, 2},  /* ^I (2) + A (1) + B (1) = 4 */
+    {{0x001B, 0x005B, 0x0041}, 3, "ESC [ A", 4, 2},  /* ^[ (2) + [ (1) + A (1) = 4 */
+  };
 
-  printf("Raw text with ANSI: \"%s\"\n", ansi_text);
-  printf("Raw width (including ANSI): %zu\n", unicode_width_cstr(ansi_text));
+  int failed = 0;
+  for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+    unicode_width_state_t state;
+    unicode_width_init(&state);
 
-  /* Filtering of ANSI sequences. */
-  char filtered[256] = {};
-  size_t filtered_len = 0;
-  int in_escape = 0;
+    int width_ignore = 0;
+    int width_caret = 0;
 
-  for (size_t i = 0; i < strlen(ansi_text); i++) {
-    if (ansi_text[i] == '\x1B') {
-      /* Start of escape sequence. */
-      in_escape = 1;
-    } else if (in_escape && ansi_text[i-1] == '\x1B' && ansi_text[i] == '[') {
-      /* Part of CSI sequence. */
-      continue;
-    } else if (in_escape && ansi_text[i] >= 0x40 && ansi_text[i] <= 0x7E) {
-      /* End of escape sequence reached (any letter or symbol). */
-      in_escape = 0;
-    } else if (!in_escape) {
-      /* Only copy if not in an escape sequence. */
-      filtered[filtered_len++] = ansi_text[i];
+    for (size_t j = 0; j < tests[i].count; j++) {
+      int width = unicode_width_process(&state, tests[i].codepoints[j]);
+
+      if (width >= 0) {
+        /* Normal character with width. */
+        width_ignore += width;
+        width_caret += width;
+      } else if (width == -1) {
+        /* Ignore or use caret width. */
+        int control_width = unicode_width_control_char(tests[i].codepoints[j]);
+        if (control_width >= 0) {
+          width_caret += control_width;
+        }
+      }
+    }
+
+    /* Check both methods. */
+    int ignore_pass = (width_ignore == tests[i].expected_width_ignore);
+    int caret_pass = (width_caret == tests[i].expected_width_caret);
+
+    if (ignore_pass && caret_pass) {
+      printf("  [%s]: PASS (ignore: %d, caret: %d)\n",
+             tests[i].desc, width_ignore, width_caret);
+    } else {
+      printf("  [%s]: FAIL - Expected (ignore: %d, caret: %d), got (ignore: %d, caret: %d)\n",
+             tests[i].desc,
+             tests[i].expected_width_ignore, tests[i].expected_width_caret,
+             width_ignore, width_caret);
+      failed++;
     }
   }
-  filtered[filtered_len] = '\0';
 
-  printf("Filtered text: \"%s\"\n", filtered);
-  printf("Correct width (after filtering): %zu\n\n", unicode_width_cstr(filtered));
+  printf("Mixed sequences: %zu tests, %d failures\n\n",
+         sizeof(tests) / sizeof(tests[0]), failed);
 }
 
 int main() {
@@ -223,7 +285,7 @@ int main() {
     {"", "Empty string", 0},
     {"Hello", "ASCII text", 5},
     {"Hello, world!", "ASCII with punctuation", 13},
-    {"\t\n\r", "Control characters", 1},
+    {"\t\n\r", "Control characters", 0},
   };
   failures += run_tests(basic_tests, sizeof(basic_tests) / sizeof(basic_tests[0]), "Basic ASCII");
 
@@ -260,7 +322,8 @@ int main() {
 
   /* Special cases. */
   test_case_t special_tests[] = {
-    {"\r\n", "CR+LF", 1},
+    {"\r\n", "CR+LF", 0},
+    {"\n\r", "LF+CR", 0},
     {"a\u0301", "a + combining accent", 1},
     {"é", "e with acute (precomposed)", 1},
     {"e\u0301", "e + combining accent", 1},
@@ -270,14 +333,17 @@ int main() {
   };
   failures += run_tests(special_tests, sizeof(special_tests) / sizeof(special_tests[0]), "Special cases");
 
+  /* Test control characters handling. */
+  test_control_char_width();
+
   /* Test individual codepoints. */
   test_individual_codepoints();
 
   /* Test codepoint sequences. */
   test_codepoint_sequences();
 
-  /* Demonstrate ANSI handling. */
-  test_ansi_filtering();
+  /* Test mixed sequences with control characters. */
+  test_mixed_sequences();
 
   if (failures == 0) {
     printf("All test categories passed!\n");
