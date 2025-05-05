@@ -824,6 +824,7 @@ typedef enum {{
   WIDTH_STATE_KEYCAP_ZWJ_EMOJI_PRESENTATION       = 7,
   WIDTH_STATE_REGIONAL_INDICATOR_ZWJ_PRESENTATION = 8,
   WIDTH_STATE_TAG_END_ZWJ_EMOJI_PRESENTATION      = 9,
+  WIDTH_STATE_ZWJ_SEQUENCE_MEMBER                 = 10,
 }} width_state_t;
 
 /* State for the width calculation state machine.
@@ -1133,17 +1134,14 @@ int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint
 
     case WIDTH_STATE_EMOJI_PRESENTATION:
       if (codepoint == 0xFE0F) {
+        /* Variation selector-16 after standalone emoji: zero width. */
         next_state = WIDTH_STATE_DEFAULT;
+        width = 0;
 
-        /* Variation selector-16 after emoji: zero width but add +1 to width
-         * to ensure emoji presentation sequences have width 2.
-         */
-         width = 0;
-
-         /* If the base character has width 1, increase to 2. */
-         if (lookup_width(state->previous_codepoint) == 1) {
-           adjust = 1;
-         }
+        /* If the base character has width 1, increase to 2. */
+        if (lookup_width(state->previous_codepoint) == 1) {
+          adjust = 1;
+        }
       } else if (codepoint == 0x200D) {
         /* ZWJ after emoji: zero width. */
         next_state = WIDTH_STATE_ZWJ_EMOJI_PRESENTATION;
@@ -1156,30 +1154,56 @@ int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint
       break;
 
     case WIDTH_STATE_ZWJ_EMOJI_PRESENTATION:
+      /* After ZWJ, direct to appropriate state based on character type.
+       * Always zero width for anything after ZWJ.
+       */
+      width = 0;
+
       if (codepoint == 0x20E3) {
-        /* Keycap after ZWJ: zero width (part of ZWJ sequence). */
+        /* Keycap after ZWJ. */
         next_state = WIDTH_STATE_KEYCAP_ZWJ_EMOJI_PRESENTATION;
-        width = 0;
-      } else if (codepoint >= 0x1F000 || is_emoji_presentation_start(codepoint)) {
-        /* Emoji after ZWJ: zero width (part of ZWJ sequence). */
-        next_state = WIDTH_STATE_EMOJI_PRESENTATION;
-        width = 0;
       } else if (codepoint >= 0x1F1E6 && codepoint <= 0x1F1FF) {
-        /* Regional indicator after ZWJ: width 1. */
+        /* Regional indicator after ZWJ. */
         next_state = WIDTH_STATE_REGIONAL_INDICATOR_ZWJ_PRESENTATION;
-        width = 1;
       } else if (codepoint == 0xE007F) {
-        /* Tag terminator after ZWJ: zero width. */
+        /* Tag terminator after ZWJ. */
         next_state = WIDTH_STATE_TAG_END_ZWJ_EMOJI_PRESENTATION;
-        width = 0;
+      } else {
+        /* Any other character after ZWJ (including medical symbols, etc.) */
+        next_state = WIDTH_STATE_ZWJ_SEQUENCE_MEMBER;
+      }
+      break;
+
+    case WIDTH_STATE_ZWJ_SEQUENCE_MEMBER:
+      /* Handle characters that are part of a ZWJ sequence.
+       * Always zero width within a ZWJ sequence.
+       */
+      width = 0;
+
+      if (codepoint == 0xFE0F) {
+        /* VS16 in a ZWJ sequence: zero width with no adjustment. */
+        next_state = WIDTH_STATE_DEFAULT;
+      } else if (codepoint == 0x200D) {
+        /* Another ZWJ - continue the ZWJ sequence. */
+        next_state = WIDTH_STATE_ZWJ_EMOJI_PRESENTATION;
+      } else {
+        /* Any other character - remain in ZWJ sequence. */
+        next_state = WIDTH_STATE_ZWJ_SEQUENCE_MEMBER;
       }
       break;
 
     case WIDTH_STATE_KEYCAP_ZWJ_EMOJI_PRESENTATION:
-      if (codepoint >= 0x1F000 || is_emoji_presentation_start(codepoint)) {
-        /* Emoji after keycap: zero width (part of ZWJ sequence). */
-        next_state = WIDTH_STATE_EMOJI_PRESENTATION;
-        width = 0;
+      /* Always zero width in ZWJ sequence. */
+      width = 0;
+      if (codepoint == 0xFE0F) {
+        /* VS16 after keycap in ZWJ sequence: no adjustment. */
+        next_state = WIDTH_STATE_DEFAULT;
+      } else if (codepoint == 0x200D) {
+        /* ZWJ after keycap: continue sequence. */
+        next_state = WIDTH_STATE_ZWJ_EMOJI_PRESENTATION;
+      } else {
+        /* Any other character. */
+        next_state = WIDTH_STATE_ZWJ_SEQUENCE_MEMBER;
       }
       break;
 
@@ -1200,23 +1224,37 @@ int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint
       break;
 
     case WIDTH_STATE_REGIONAL_INDICATOR_ZWJ_PRESENTATION:
+      /* Always zero width in ZWJ context. */
+      width = 0;
       if (codepoint >= 0x1F1E6 && codepoint <= 0x1F1FF) {
-        /* Regional indicator after another in ZWJ context: zero width. */
+        /* Regional indicator after another in ZWJ context. */
         next_state = WIDTH_STATE_REGIONAL_INDICATOR;
-        width = 1;
+        width = 1; /* Special case: regional indicators still need width for flags. */
+      } else if (codepoint == 0x200D) {
+        /* ZWJ after regional indicator in ZWJ context. */
+        next_state = WIDTH_STATE_ZWJ_EMOJI_PRESENTATION;
+      } else {
+        /* Any other character. */
+        next_state = WIDTH_STATE_ZWJ_SEQUENCE_MEMBER;
       }
       break;
 
     case WIDTH_STATE_TAG_END_ZWJ_EMOJI_PRESENTATION:
+      /* Always zero width in tag sequence. */
+      width = 0;
       if ((codepoint >= 0xE0030 && codepoint <= 0xE0039) ||
           (codepoint >= 0xE0061 && codepoint <= 0xE007A)) {
-        /* Tag spec characters after tag end: zero width. */
+        /* Tag spec characters after tag end: stay in tag state. */
         next_state = WIDTH_STATE_TAG_END_ZWJ_EMOJI_PRESENTATION;
-        width = 0;
       } else if (codepoint == 0x1F3F4) {
-        /* Black flag: zero width (part of tag sequence). */
-        next_state = WIDTH_STATE_EMOJI_PRESENTATION;
-        width = 0;
+        /* Black flag: part of tag sequence. */
+        next_state = WIDTH_STATE_ZWJ_SEQUENCE_MEMBER;
+      } else if (codepoint == 0x200D) {
+        /* ZWJ after tag: continue ZWJ sequence. */
+        next_state = WIDTH_STATE_ZWJ_EMOJI_PRESENTATION;
+      } else {
+        /* Any other character. */
+        next_state = WIDTH_STATE_ZWJ_SEQUENCE_MEMBER;
       }
       break;
 

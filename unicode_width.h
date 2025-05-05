@@ -36,6 +36,7 @@ typedef enum {
   WIDTH_STATE_KEYCAP_ZWJ_EMOJI_PRESENTATION       = 7,
   WIDTH_STATE_REGIONAL_INDICATOR_ZWJ_PRESENTATION = 8,
   WIDTH_STATE_TAG_END_ZWJ_EMOJI_PRESENTATION      = 9,
+  WIDTH_STATE_ZWJ_SEQUENCE_MEMBER                 = 10,
 } width_state_t;
 
 /* State for the width calculation state machine.
