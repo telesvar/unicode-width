@@ -7,88 +7,94 @@
  * SPDX-License-Identifier: 0BSD
  */
 
-#ifndef UNICODE_WIDTH_H
-#define UNICODE_WIDTH_H
+#ifndef UNICODE_WIDTH_H_
+#define UNICODE_WIDTH_H_
 
-#include <stddef.h>
-#include <stdint.h>
+#include <stddef.h> /* size_t */
+
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
+#include <stdint.h> /* uint_least32_t, uint_least16_t, uint_least8_t */
+#else
+#include <limits.h>
+
+/* Compile-time environment checks for C89. */
+
+/* Enforce that char is at least 8 bits. */
+#if CHAR_BIT < 8
+#error "this implementation has `CHAR_BIT` < 8; unsupported"
+#endif
+
+/* uint_least8_t: choose the smallest type with at least 8 bits. */
+#if UCHAR_MAX >= 0xFFu
+typedef unsigned char uint_least8_t;
+#elif USHRT_MAX >= 0xFFu
+typedef unsigned short uint_least8_t;
+#elif UINT_MAX >= 0xFFu
+typedef unsigned int uint_least8_t;
+#elif ULONG_MAX >= 0xFFul
+typedef unsigned long uint_least8_t;
+#else
+#error "no suitable type for `uint_least8_t` (need >= 8 bits)"
+#endif
+
+/* uint_least16_t: choose the smallest type with at least 16 bits. */
+#if USHRT_MAX >= 0xFFFFu
+typedef unsigned short uint_least16_t;
+#elif UINT_MAX >= 0xFFFFu
+typedef unsigned int uint_least16_t;
+#elif ULONG_MAX >= 0xFFFFul
+typedef unsigned long uint_least16_t;
+#else
+#error "no suitable type for `uint_least16_t` (need >= 16 bits)"
+#endif
+
+/* uint_least32_t: choose the smallest type with at least 32 bits. */
+#if UINT_MAX >= 0xFFFFFFFFu
+typedef unsigned int uint_least32_t;
+#elif ULONG_MAX >= 0xFFFFFFFFul
+typedef unsigned long uint_least32_t;
+#else
+#error "no suitable type for `uint_least32_t` (need >= 32 bits)"
+#endif
+
+/* Enforce that unsigned long is at least 32 bits. */
+#if ULONG_MAX < 0xFFFFFFFFul
+#error "this implementation has unsigned long < 32 bits; unsupported"
+#endif
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Version of Unicode data.
- */
 #define UNICODE_WIDTH_VERSION_MAJOR 16
 #define UNICODE_WIDTH_VERSION_MINOR 0
 #define UNICODE_WIDTH_VERSION_PATCH 0
 
-/* Width state values.
- */
 typedef enum {
-  WIDTH_STATE_DEFAULT                             = 0,
-  WIDTH_STATE_LINE_FEED                           = 1,
-  WIDTH_STATE_EMOJI_MODIFIER                      = 2,
-  WIDTH_STATE_REGIONAL_INDICATOR                  = 3,
-  WIDTH_STATE_SEVERAL_REGIONAL_INDICATOR          = 4,
-  WIDTH_STATE_EMOJI_PRESENTATION                  = 5,
-  WIDTH_STATE_ZWJ_EMOJI_PRESENTATION              = 6,
-  WIDTH_STATE_KEYCAP_ZWJ_EMOJI_PRESENTATION       = 7,
-  WIDTH_STATE_REGIONAL_INDICATOR_ZWJ_PRESENTATION = 8,
-  WIDTH_STATE_TAG_END_ZWJ_EMOJI_PRESENTATION      = 9,
-  WIDTH_STATE_ZWJ_SEQUENCE_MEMBER                 = 10,
+  WIDTH_STATE_DEFAULT = 0,
+  WIDTH_STATE_AFTER_CR = 1,
+  WIDTH_STATE_RI_ODD = 2,
+  WIDTH_STATE_RI_EVEN = 3,
+  WIDTH_STATE_ZWJ_PENDING = 4,
+  WIDTH_STATE_ZWJ_ACTIVE = 5
 } width_state_t;
 
-/* State for the width calculation state machine.
- */
 typedef struct {
-  width_state_t  state;
-  uint_least32_t previous_codepoint;
+  width_state_t state;
+  uint_least32_t prev_codepoint;
+  uint_least8_t last_base_width;
+  uint_least8_t last_base_is_emoji_variation;
 } unicode_width_state_t;
 
-/* Initialize a unicode width state.
- * Must be called before any other function.
- *
- * @param state Pointer to state to initialize
- */
 void unicode_width_init(unicode_width_state_t *state);
-
-/* Process a Unicode codepoint and return its width.
- * Width is 0, 1, 2, or 3, or -1 for control characters.
- *
- * Control characters (0x00-0x1F except newlines, 0x7F, and 0x80-0x9F) return -1,
- * allowing the caller to decide how to display them. For readline-like applications,
- * control characters are typically displayed using caret notation (^X) with width 2.
- * Use unicode_width_control_char() to get this width.
- *
- * Newlines (LF, CR, CRLF) return width 0 as they don't consume horizontal space
- * in terminal displays.
- *
- * Note that the width of a codepoint may depend on context (preceding/following
- * codepoints), so this function keeps track of context in the provided state.
- *
- * @param state Pointer to state
- * @param codepoint Unicode codepoint to process
- * @return Width of the codepoint in columns, or -1 for control characters
- */
-int unicode_width_process(unicode_width_state_t *state, uint_least32_t codepoint);
-
-/* Get the display width of a control character in caret notation (e.g., ^A).
- * This is useful for applications like readline that display control chars.
- *
- * @param codepoint The Unicode codepoint to check
- * @return The display width (usually 2 for ^X notation), or -1 if not a control char
- */
+int unicode_width_process(unicode_width_state_t *state,
+                          uint_least32_t codepoint);
 int unicode_width_control_char(uint_least32_t codepoint);
-
-/* Reset a unicode width state to its initial state.
- *
- * @param state Pointer to state to reset
- */
 void unicode_width_reset(unicode_width_state_t *state);
 
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
 
-#endif /* UNICODE_WIDTH_H */
+#endif /* UNICODE_WIDTH_H_ */
